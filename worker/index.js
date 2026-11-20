@@ -1,6 +1,7 @@
 // Cloudflare Worker + D1 Full-Stack Edge Proxy for proxysystemarash.ir
 // Database ID: a16983d7-1da3-4555-a1aa-f5730bccfcae (Binding: DB)
 // Supports: Full Dashboard API + Auth + D1 Persistence + /sub/:secret (V2Ray & INCY) + VLESS over WS + Anti-Probe
+import { connect } from 'cloudflare:sockets';
 
 const ADMIN_USERNAME = 'Arash';
 const PBKDF2_SALT_HEX = '381a4fa9b19f24929d0f45af389f8638';
@@ -27,7 +28,7 @@ const memoryStore = {
   securityLogs: [
     {
       id: 'boot-log-1',
-      timestamp: new Date().toISOString(),
+      timestamp: '2026-11-20T00:00:00.000Z',
       eventType: 'settings_updated',
       severity: 'info',
       sourceIp: 'CF-Edge',
@@ -1242,8 +1243,6 @@ function stringifyUuid(arr) {
 }
 
 async function handleTcpOutbound(remoteSocket, addressRemote, portRemote, rawClientData, webSocket, vlessResponseHeader, proxyIp) {
-  const { connect } = await import('cloudflare:sockets');
-
   async function connectAndWrite(address, port) {
     const tcpSocket = connect({ hostname: address, port });
     remoteSocket.value = tcpSocket;
