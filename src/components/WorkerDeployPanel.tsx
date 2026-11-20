@@ -223,36 +223,37 @@ export function WorkerDeployPanel({ dashboard, onUpdate }: WorkerDeployPanelProp
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-4">
           <div className="rounded-lg border border-[#1E293B] bg-[#090D14] p-4">
             <div className="font-mono text-xs font-semibold text-emerald-400">01</div>
-            <div className="mt-2 text-xs font-semibold text-[#E6EDF3]">ساخت جداول D1</div>
+            <div className="mt-2 text-xs font-semibold text-[#E6EDF3]">ساخت خودکار جداول D1</div>
             <p className="mt-1.5 text-xs leading-5 text-[#94A3B8]">
-              کد تب <span className="font-mono text-[#CBD5E1]">schema.sql</span> را در بخش Console دیتابیس کلودفلر (شناسه{' '}
-              <span dir="ltr" className="font-mono text-[#CBD5E1]">a16983d7...</span>) اجرا کنید.
+              ورکر <span className="font-mono text-[#CBD5E1]">worker/index.js</span> در اولین درخواست، جداول دیتابیس{' '}
+              <span dir="ltr" className="font-mono text-[#CBD5E1]">a16983d7...</span> را خودکار می‌سازد (یا از{' '}
+              <span className="font-mono text-[#CBD5E1]">schema.sql</span> استفاده کنید).
             </p>
           </div>
           <div className="rounded-lg border border-[#1E293B] bg-[#090D14] p-4">
             <div className="font-mono text-xs font-semibold text-emerald-400">02</div>
-            <div className="mt-2 text-xs font-semibold text-[#E6EDF3]">اتصال D1 به Pages/Worker</div>
+            <div className="mt-2 text-xs font-semibold text-[#E6EDF3]">اتصال D1 به Worker</div>
             <p className="mt-1.5 text-xs leading-5 text-[#94A3B8]">
-              در Cloudflare Pages بخش Settings &gt; Bindings یک D1 Database با نام متغیر{' '}
-              <span className="font-mono text-[#CBD5E1]">DB</span> به این دیتابیس متصل کنید.
+              در <span className="font-mono text-[#CBD5E1]">wrangler.toml</span> یا تنظیمات Worker بخش Bindings، دیتابیس D1 با نام{' '}
+              <span className="font-mono text-[#CBD5E1]">DB</span> متصل است.
             </p>
           </div>
           <div className="rounded-lg border border-[#1E293B] bg-[#090D14] p-4">
             <div className="font-mono text-xs font-semibold text-emerald-400">03</div>
-            <div className="mt-2 text-xs font-semibold text-[#E6EDF3]">فعال‌سازی _worker.js</div>
+            <div className="mt-2 text-xs font-semibold text-[#E6EDF3]">اتصال Custom Domain</div>
             <p className="mt-1.5 text-xs leading-5 text-[#94A3B8]">
-              فایل <span className="font-mono text-[#CBD5E1]">_worker.js</span> داخل خروجی{' '}
-              <span className="font-mono text-[#CBD5E1]">dist/</span> قرار می‌گیرد تا مسیرهای{' '}
-              <span className="font-mono text-[#CBD5E1]">/sub/</span> و WebSocket VLESS کار کنند.
+              در تنظیمات Worker بخش Domains &amp; Routes دامنه{' '}
+              <span dir="ltr" className="font-mono text-[#CBD5E1]">{dashboard.settings.domain}</span>{' '}
+              را به‌عنوان Custom Domain اضافه کنید تا Error 523 برطرف شود.
             </p>
           </div>
           <div className="rounded-lg border border-[#1E293B] bg-[#090D14] p-4">
             <div className="font-mono text-xs font-semibold text-emerald-400">04</div>
             <div className="mt-2 text-xs font-semibold text-[#E6EDF3]">تنظیم PROXYIP</div>
             <p className="mt-1.5 text-xs leading-5 text-[#94A3B8]">
-              متغیر محیطی <span className="font-mono text-[#CBD5E1]">PROXYIP</span> را برابر{' '}
+              متغیر محیطی <span className="font-mono text-[#CBD5E1]">PROXYIP</span> برابر{' '}
               <span dir="ltr" className="font-mono text-[#CBD5E1]">{dashboard.settings.proxyIp}</span>{' '}
-              بگذارید تا IP ایران مخفی بماند.
+              تنظیم شده است تا IP ایران مخفی بماند.
             </p>
           </div>
         </div>
@@ -264,8 +265,8 @@ export function WorkerDeployPanel({ dashboard, onUpdate }: WorkerDeployPanelProp
           <div className="flex items-center gap-1 rounded-lg border border-[#1E293B] bg-[#090D14] p-1">
             {(
               [
-                { id: 'worker', label: '_worker.js (Cloudflare Worker + /sub)' },
-                { id: 'wrangler', label: 'wrangler.toml (D1 Binding)' },
+                { id: 'worker', label: 'worker/index.js (Full-Stack + /sub)' },
+                { id: 'wrangler', label: 'wrangler.toml (D1 + Assets)' },
                 { id: 'schema', label: 'schema.sql (جداول D1)' },
               ] as const
             ).map((tab) => (

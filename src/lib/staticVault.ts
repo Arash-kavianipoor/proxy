@@ -102,17 +102,18 @@ async function verifyPasswordWebCrypto(username: string, password: string): Prom
 
 function createInitialVault(): VaultData {
   const now = new Date().toISOString();
+  const defaultDomain =
+    typeof window !== 'undefined' &&
+    window.location.hostname &&
+    !window.location.hostname.includes('localhost') &&
+    !window.location.hostname.includes('127.0.0.1') &&
+    !window.location.hostname.endsWith('.run.app')
+      ? window.location.hostname
+      : 'proxysystemarash.ir';
   return {
     settings: {
-      domain:
-        typeof window !== 'undefined' &&
-        window.location.hostname &&
-        !window.location.hostname.includes('localhost') &&
-        !window.location.hostname.includes('127.0.0.1') &&
-        !window.location.hostname.endsWith('.run.app')
-          ? window.location.hostname
-          : 'proxysystemarash.ir',
-      workerUrl: 'https://proxysystemarash.ir',
+      domain: defaultDomain,
+      workerUrl: `https://${defaultDomain}`,
       proxyIp: '104.16.132.229',
       dohProvider: 'https://1.1.1.1/dns-query',
       subscriptionSecret: randomHex(24),
@@ -131,8 +132,8 @@ function createInitialVault(): VaultData {
         secret: crypto.randomUUID(),
         cleanIp: '104.16.132.229',
         port: 443,
-        sni: 'Arashproxysystem.ir',
-        host: 'Arashproxysystem.ir',
+        sni: defaultDomain,
+        host: defaultDomain,
         path: `/ws-${randomHex(4)}`,
         transport: 'ws',
         fingerprint: 'chrome',
@@ -151,8 +152,8 @@ function createInitialVault(): VaultData {
         secret: crypto.randomUUID(),
         cleanIp: '172.64.155.141',
         port: 2053,
-        sni: 'Arashproxysystem.ir',
-        host: 'Arashproxysystem.ir',
+        sni: defaultDomain,
+        host: defaultDomain,
         path: `/incy-${randomHex(4)}`,
         transport: 'ws',
         fingerprint: 'safari',
@@ -171,8 +172,8 @@ function createInitialVault(): VaultData {
         secret: randomBase64Url(18),
         cleanIp: '104.18.2.161',
         port: 8443,
-        sni: 'Arashproxysystem.ir',
-        host: 'Arashproxysystem.ir',
+        sni: defaultDomain,
+        host: defaultDomain,
         path: `/tr-${randomHex(4)}`,
         transport: 'ws',
         fingerprint: 'firefox',
@@ -191,8 +192,8 @@ function createInitialVault(): VaultData {
         secret: crypto.randomUUID(),
         cleanIp: '162.159.135.42',
         port: 443,
-        sni: 'Arashproxysystem.ir',
-        host: 'Arashproxysystem.ir',
+        sni: defaultDomain,
+        host: defaultDomain,
         path: `/vm-${randomHex(4)}`,
         transport: 'ws',
         fingerprint: 'chrome',

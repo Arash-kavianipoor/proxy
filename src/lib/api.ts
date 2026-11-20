@@ -341,7 +341,7 @@ export async function syncD1Database(): Promise<{
     return await apiRequest('/api/d1/sync', { method: 'POST' });
   } catch (err) {
     if (err instanceof StaticHostFallbackError) {
-      throw new Error('همگام‌سازی مستقیم REST API نیازمند سرور Node و متغیرهای CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN است؛ در Cloudflare Pages از فایل schema.sql و wrangler.toml استفاده کنید.');
+      throw new Error('این محیط استاتیک است؛ روی Cloudflare Worker با binding دیتابیس DB، همگام‌سازی D1 به‌صورت مستقیم انجام می‌شود.');
     }
     throw err;
   }

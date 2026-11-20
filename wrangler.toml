@@ -1,6 +1,6 @@
-name = "arash-proxy-system"
+name = "proxy"
 main = "worker/index.js"
-compatibility_date = "2025-01-01"
+compatibility_date = "2025-04-01"
 
 [assets]
 directory = "./dist"
@@ -8,9 +8,12 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = true
 
+[observability]
+enabled = true
+
 [vars]
 PROXYIP = "104.16.132.229"
-PRIMARY_DOMAIN = "Arashproxysystem.ir"
+PRIMARY_DOMAIN = "proxysystemarash.ir"
 
 [[d1_databases]]
 binding = "DB"
