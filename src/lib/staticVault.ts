@@ -5,6 +5,7 @@ import {
 } from './proxyGenerators.ts';
 import type {
   CleanIpEntry,
+  D1StatusResult,
   DashboardState,
   IpAuditResult,
   ProbeResult,
@@ -14,6 +15,8 @@ import type {
   SystemSettings,
   TransportType,
 } from '../types.ts';
+
+const DEFAULT_D1_ID = 'a16983d7-1da3-4555-a1aa-f5730bccfcae';
 
 const VAULT_STORAGE_KEY = 'arash_proxy_vault_state_v1';
 const LOCKOUT_STORAGE_KEY = 'arash_proxy_vault_lockout_v1';
@@ -101,11 +104,19 @@ function createInitialVault(): VaultData {
   const now = new Date().toISOString();
   return {
     settings: {
-      domain: 'Arashproxysystem.ir',
-      workerUrl: 'https://Arashproxysystem.ir',
+      domain:
+        typeof window !== 'undefined' &&
+        window.location.hostname &&
+        !window.location.hostname.includes('localhost') &&
+        !window.location.hostname.includes('127.0.0.1') &&
+        !window.location.hostname.endsWith('.run.app')
+          ? window.location.hostname
+          : 'proxysystemarash.ir',
+      workerUrl: 'https://proxysystemarash.ir',
       proxyIp: '104.16.132.229',
       dohProvider: 'https://1.1.1.1/dns-query',
       subscriptionSecret: randomHex(24),
+      d1DatabaseId: DEFAULT_D1_ID,
       antiProbeDecoy: true,
       webrtcBlock: true,
       strictIpMask: true,
@@ -223,7 +234,11 @@ function loadVault(): VaultData {
       localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(initial));
       return initial;
     }
-    return JSON.parse(raw) as VaultData;
+    const parsed = JSON.parse(raw) as VaultData;
+    if (!parsed.settings.d1DatabaseId) {
+      parsed.settings.d1DatabaseId = DEFAULT_D1_ID;
+    }
+    return parsed;
   } catch {
     return createInitialVault();
   }
@@ -615,6 +630,41 @@ export const staticVault = {
       headersDetectedOnRequest: [],
       iranIpExposed: (map.loc || '').toUpperCase() === 'IR',
       checkedAt: new Date().toISOString(),
+    };
+  },
+
+  async getD1Status(): Promise<D1StatusResult> {
+    const vault = loadVault();
+    const dbId = vault.settings.d1DatabaseId || DEFAULT_D1_ID;
+    try {
+      const resp = await fetch('/health-edge');
+      if (resp.ok) {
+        const data = (await resp.json().catch(() => ({}))) as { d1Bound?: boolean };
+        if (data.d1Bound) {
+          return {
+            databaseId: dbId,
+            bindingName: 'DB',
+            restApiConfigured: false,
+            connected: true,
+            tablesReady: true,
+            tokenCountInD1: vault.tokens.length,
+            checkedAt: new Date().toISOString(),
+            message: 'متصل به دیتابیس کلودفلر D1 از طریق Worker Binding (env.DB).',
+          };
+        }
+      }
+    } catch {}
+
+    return {
+      databaseId: dbId,
+      bindingName: 'DB',
+      restApiConfigured: false,
+      connected: false,
+      tablesReady: false,
+      tokenCountInD1: null,
+      checkedAt: new Date().toISOString(),
+      message:
+        'فایل‌های wrangler.toml و _worker.js با شناسه D1 آماده است؛ پس از آپلود dist/_worker.js در Cloudflare Pages و اتصال D1 Binding به نام DB، دیتابیس فعال می‌شود.',
     };
   },
 };

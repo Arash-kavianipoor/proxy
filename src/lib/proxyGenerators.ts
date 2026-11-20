@@ -49,10 +49,15 @@ export function buildProxyUri(token: ProxyToken): string {
   return `vmess://${toBase64Utf8(JSON.stringify(vmessConfig))}`;
 }
 
+export function buildRawUriList(tokens: ProxyToken[]): string {
+  return tokens
+    .filter((t) => t.enabled)
+    .map(buildProxyUri)
+    .join('\n');
+}
+
 export function buildV2RaySubscriptionPayload(tokens: ProxyToken[]): string {
-  const active = tokens.filter((t) => t.enabled);
-  const uris = active.map(buildProxyUri).join('\n');
-  return toBase64Utf8(uris);
+  return toBase64Utf8(buildRawUriList(tokens));
 }
 
 export function buildIncySingBoxConfig(tokens: ProxyToken[], settings: SystemSettings): string {
@@ -432,19 +437,86 @@ export function buildXrayFragmentConfig(token: ProxyToken, settings: SystemSetti
   return JSON.stringify(config, null, 2);
 }
 
-export function buildCloudflareWorkerScript(tokens: ProxyToken[], settings: SystemSettings): string {
-  const vlessUuids = tokens
-    .filter((t) => t.enabled && t.protocol === 'vless')
-    .map((t) => t.secret);
-  const primaryUuid = vlessUuids[0] || tokens[0]?.secret || 'd342d11e-d424-4583-b36e-524ab1f0afa4';
-  const allowedPaths = Array.from(new Set(tokens.filter((t) => t.enabled).map((t) => t.path)));
+export function buildWranglerToml(settings: SystemSettings): string {
+  const dbId = settings.d1DatabaseId || 'a16983d7-1da3-4555-a1aa-f5730bccfcae';
+  return `name = "arash-proxy-system"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "dist"
 
-  return `// Cloudflare Worker for ${settings.domain}
-// Zero-IP-Leak VLESS over WebSocket + ProxyIP Relay + Anti-Probe Decoy
+[vars]
+PROXYIP = "${settings.proxyIp || '104.16.132.229'}"
+PRIMARY_DOMAIN = "${settings.domain}"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "arashproxydb"
+database_id = "${dbId}"
+`;
+}
+
+export function buildD1SchemaSql(tokens: ProxyToken[], settings: SystemSettings): string {
+  const esc = (s: string) => s.replace(/'/g, "''");
+  const tokenInserts = tokens
+    .map(
+      (t) =>
+        `INSERT OR REPLACE INTO proxy_tokens (id, name, protocol, secret, clean_ip, port, sni, host, path, transport, fingerprint, tls_fragment_enabled, enabled, updated_at) VALUES ('${esc(t.id)}', '${esc(t.name)}', '${esc(t.protocol)}', '${esc(t.secret)}', '${esc(t.cleanIp)}', ${t.port}, '${esc(t.sni)}', '${esc(t.host)}', '${esc(t.path)}', '${esc(t.transport)}', '${esc(t.fingerprint)}', ${t.tlsFragmentEnabled ? 1 : 0}, ${t.enabled ? 1 : 0}, '${esc(t.lastRotatedAt)}');`
+    )
+    .join('\n');
+
+  return `-- Cloudflare D1 Schema for ${settings.domain} (Database ID: ${settings.d1DatabaseId || 'a16983d7-1da3-4555-a1aa-f5730bccfcae'})
+CREATE TABLE IF NOT EXISTS proxy_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  domain TEXT NOT NULL,
+  proxy_ip TEXT NOT NULL,
+  doh_provider TEXT NOT NULL,
+  subscription_secret TEXT NOT NULL,
+  strip_client_headers INTEGER NOT NULL DEFAULT 1,
+  anti_probe_decoy INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS proxy_tokens (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  protocol TEXT NOT NULL,
+  secret TEXT NOT NULL,
+  clean_ip TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  sni TEXT NOT NULL,
+  host TEXT NOT NULL,
+  path TEXT NOT NULL,
+  transport TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  tls_fragment_enabled INTEGER NOT NULL DEFAULT 1,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
+
+INSERT OR REPLACE INTO proxy_settings (id, domain, proxy_ip, doh_provider, subscription_secret, strip_client_headers, anti_probe_decoy, updated_at)
+VALUES (1, '${esc(settings.domain)}', '${esc(settings.proxyIp)}', '${esc(settings.dohProvider)}', '${esc(settings.subscriptionSecret)}', ${settings.stripClientHeaders ? 1 : 0}, ${settings.antiProbeDecoy ? 1 : 0}, '${new Date().toISOString()}');
+
+${tokenInserts}
+`;
+}
+
+export function buildCloudflareWorkerScript(tokens: ProxyToken[], settings: SystemSettings): string {
+  const activeTokens = tokens.filter((t) => t.enabled);
+  const vlessUuids = activeTokens.filter((t) => t.protocol === 'vless').map((t) => t.secret);
+  const primaryUuid = vlessUuids[0] || tokens[0]?.secret || 'd342d11e-d424-4583-b36e-524ab1f0afa4';
+  const allowedPaths = Array.from(new Set(activeTokens.map((t) => t.path)));
+  const embeddedV2RayBase64 = buildV2RaySubscriptionPayload(tokens);
+  const embeddedIncyJson = buildIncySingBoxConfig(tokens, settings);
+
+  return `// Cloudflare Pages / Worker for ${settings.domain}
+// Connected to Cloudflare D1 (${settings.d1DatabaseId || 'a16983d7-1da3-4555-a1aa-f5730bccfcae'})
+// Supports: VLESS over WebSocket + /sub/:secret (V2Ray & INCY) + ProxyIP Relay + Anti-Probe
 import { connect } from 'cloudflare:sockets';
 
-const ALLOWED_UUIDS = new Set(${JSON.stringify(vlessUuids.length > 0 ? vlessUuids : [primaryUuid])});
-const ALLOWED_WS_PATHS = new Set(${JSON.stringify(allowedPaths.length > 0 ? allowedPaths : ['/ws-arash'])});
+const FALLBACK_UUIDS = new Set(${JSON.stringify(vlessUuids.length > 0 ? vlessUuids : [primaryUuid])});
+const FALLBACK_WS_PATHS = new Set(${JSON.stringify(allowedPaths.length > 0 ? allowedPaths : ['/ws-arash'])});
+const FALLBACK_SUB_SECRET = '${settings.subscriptionSecret}';
+const EMBEDDED_V2RAY_B64 = '${embeddedV2RayBase64}';
+const EMBEDDED_INCY_JSON = ${JSON.stringify(embeddedIncyJson)};
 const PROXY_IP = '${settings.proxyIp || '104.16.132.229'}';
 const DOH_ENDPOINT = '${settings.dohProvider || 'https://1.1.1.1/dns-query'}';
 const STRICT_HEADER_STRIP = ${settings.stripClientHeaders ? 'true' : 'false'};
@@ -456,30 +528,129 @@ export default {
       const url = new URL(request.url);
       const upgradeHeader = request.headers.get('Upgrade');
 
-      // 1. Non-WebSocket requests get a clean anti-probe decoy website
-      if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
-        if (url.pathname === '/health-edge') {
-          return new Response(JSON.stringify({ ok: true, edge: request.cf?.colo || 'CF' }), {
+      // 1. Live Subscription Endpoint (/sub/:secret?format=v2ray|incy) backed by D1
+      if (url.pathname.startsWith('/sub/')) {
+        return await handleSubscriptionRequest(url, env);
+      }
+
+      // 2. Edge health check & D1 binding status
+      if (url.pathname === '/health-edge') {
+        let d1Ready = false;
+        if (env && env.DB) {
+          try {
+            await env.DB.prepare('SELECT 1 AS ok').first();
+            d1Ready = true;
+          } catch {}
+        }
+        return new Response(
+          JSON.stringify({ ok: true, edge: request.cf?.colo || 'CF', d1Bound: d1Ready }),
+          {
             status: 200,
             headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
-          });
+          }
+        );
+      }
+
+      // 3. Non-WebSocket requests: pass through to Cloudflare Pages ASSETS or decoy
+      if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
+        if (env && env.ASSETS) {
+          return env.ASSETS.fetch(request);
         }
         return renderDecoyResponse(ANTI_PROBE_DECOY);
       }
 
-      // 2. Enforce randomized WebSocket path to stop active port/path scanning
+      // 4. WebSocket VLESS tunnel: verify path & UUIDs (D1 first, fallback embedded)
+      const { allowedUuids, allowedPaths } = await loadRuntimePolicy(env);
       const cleanPath = url.pathname.replace(/\\/+$/, '') || '/';
-      if (ALLOWED_WS_PATHS.size > 0 && !ALLOWED_WS_PATHS.has(cleanPath)) {
+      if (allowedPaths.size > 0 && !allowedPaths.has(cleanPath)) {
         return new Response('Not Found', { status: 404 });
       }
 
       const activeProxyIp = (env && env.PROXYIP) ? env.PROXYIP : PROXY_IP;
-      return await handleVlessOverWS(request, activeProxyIp);
+      return await handleVlessOverWS(request, activeProxyIp, allowedUuids);
     } catch (err) {
       return new Response('Bad Gateway', { status: 502 });
     }
   },
 };
+
+async function loadRuntimePolicy(env) {
+  if (env && env.DB) {
+    try {
+      const { results } = await env.DB.prepare(
+        "SELECT secret, path FROM proxy_tokens WHERE enabled = 1 AND protocol = 'vless'"
+      ).all();
+      if (results && results.length > 0) {
+        return {
+          allowedUuids: new Set(results.map((r) => r.secret)),
+          allowedPaths: new Set(results.map((r) => r.path)),
+        };
+      }
+    } catch {}
+  }
+  return { allowedUuids: FALLBACK_UUIDS, allowedPaths: FALLBACK_WS_PATHS };
+}
+
+async function handleSubscriptionRequest(url, env) {
+  const providedSecret = url.pathname.slice('/sub/'.length).replace(/\\/+$/, '');
+  const format = (url.searchParams.get('format') || 'v2ray').toLowerCase();
+  let expectedSecret = FALLBACK_SUB_SECRET;
+  let d1Tokens = null;
+
+  if (env && env.DB) {
+    try {
+      const settingsRow = await env.DB.prepare(
+        'SELECT subscription_secret FROM proxy_settings WHERE id = 1'
+      ).first();
+      if (settingsRow && settingsRow.subscription_secret) {
+        expectedSecret = settingsRow.subscription_secret;
+      }
+      const { results } = await env.DB.prepare(
+        'SELECT * FROM proxy_tokens WHERE enabled = 1'
+      ).all();
+      if (results && results.length > 0) {
+        d1Tokens = results;
+      }
+    } catch {}
+  }
+
+  if (!providedSecret || providedSecret !== expectedSecret) {
+    return new Response('Not Found', { status: 404 });
+  }
+
+  const headers = {
+    'Profile-Title': '${settings.domain}',
+    'Profile-Update-Interval': '6',
+    'Cache-Control': 'no-store',
+  };
+
+  if (format === 'incy' || format === 'singbox') {
+    return new Response(EMBEDDED_INCY_JSON, {
+      status: 200,
+      headers: { ...headers, 'content-type': 'application/json; charset=utf-8' },
+    });
+  }
+
+  if (d1Tokens) {
+    const lines = d1Tokens.map((t) => {
+      const tag = encodeURIComponent(t.name + ' [ArashProxy]');
+      const wsPath = encodeURIComponent(t.path + '?ed=2048');
+      if (t.protocol === 'trojan') {
+        return \`trojan://\${encodeURIComponent(t.secret)}@\${t.clean_ip}:\${t.port}?security=tls&sni=\${encodeURIComponent(t.sni)}&fp=\${t.fingerprint}&alpn=http%2F1.1&type=ws&host=\${encodeURIComponent(t.host)}&path=\${wsPath}#\${tag}\`;
+      }
+      return \`vless://\${t.secret}@\${t.clean_ip}:\${t.port}?encryption=none&security=tls&sni=\${encodeURIComponent(t.sni)}&fp=\${t.fingerprint}&alpn=http%2F1.1&type=ws&host=\${encodeURIComponent(t.host)}&path=\${wsPath}#\${tag}\`;
+    });
+    return new Response(btoa(unescape(encodeURIComponent(lines.join('\\n')))), {
+      status: 200,
+      headers: { ...headers, 'content-type': 'text/plain; charset=utf-8' },
+    });
+  }
+
+  return new Response(EMBEDDED_V2RAY_B64, {
+    status: 200,
+    headers: { ...headers, 'content-type': 'text/plain; charset=utf-8' },
+  });
+}
 
 function renderDecoyResponse(enabled) {
   if (!enabled) {
@@ -502,7 +673,7 @@ function renderDecoyResponse(enabled) {
   });
 }
 
-async function handleVlessOverWS(request, proxyIp) {
+async function handleVlessOverWS(request, proxyIp, allowedUuids) {
   const webSocketPair = new WebSocketPair();
   const [client, webSocket] = Object.values(webSocketPair);
   webSocket.accept();
@@ -536,7 +707,7 @@ async function handleVlessOverWS(request, proxyIp) {
             rawDataIndex,
             vlessVersion = new Uint8Array([0, 0]),
             isUDP,
-          } = parseVlessHeader(chunk);
+          } = parseVlessHeader(chunk, allowedUuids);
 
           addressLog = addressRemote;
           if (hasError) {
@@ -604,7 +775,7 @@ function isBlockedInternalAddress(host) {
   );
 }
 
-function parseVlessHeader(vlessBuffer) {
+function parseVlessHeader(vlessBuffer, allowedUuids) {
   if (vlessBuffer.byteLength < 24) {
     return { hasError: true };
   }
@@ -612,7 +783,7 @@ function parseVlessHeader(vlessBuffer) {
   const uuidBytes = new Uint8Array(vlessBuffer.slice(1, 17));
   const uuidStr = stringifyUuid(uuidBytes);
 
-  if (!ALLOWED_UUIDS.has(uuidStr)) {
+  if (!allowedUuids.has(uuidStr)) {
     return { hasError: true };
   }
 

@@ -13,6 +13,9 @@ export function SecurityHardeningPanel({ dashboard, onUpdate }: SecurityHardenin
   const [proxyIp, setProxyIp] = useState(dashboard.settings.proxyIp);
   const [dohProvider, setDohProvider] = useState(dashboard.settings.dohProvider);
   const [decoyTitle, setDecoyTitle] = useState(dashboard.settings.decoyTitle);
+  const [d1DatabaseId, setD1DatabaseId] = useState(
+    dashboard.settings.d1DatabaseId || 'a16983d7-1da3-4555-a1aa-f5730bccfcae'
+  );
   const [antiProbeDecoy, setAntiProbeDecoy] = useState(dashboard.settings.antiProbeDecoy);
   const [webrtcBlock, setWebrtcBlock] = useState(dashboard.settings.webrtcBlock);
   const [strictIpMask, setStrictIpMask] = useState(dashboard.settings.strictIpMask);
@@ -36,6 +39,7 @@ export function SecurityHardeningPanel({ dashboard, onUpdate }: SecurityHardenin
         proxyIp: proxyIp.trim(),
         dohProvider: dohProvider.trim(),
         decoyTitle: decoyTitle.trim(),
+        d1DatabaseId: d1DatabaseId.trim(),
         antiProbeDecoy,
         webrtcBlock,
         strictIpMask,
@@ -128,6 +132,19 @@ export function SecurityHardeningPanel({ dashboard, onUpdate }: SecurityHardenin
                 dir="ltr"
                 value={decoyTitle}
                 onChange={(e) => setDecoyTitle(e.target.value)}
+                className="mt-1.5 h-10 w-full rounded-lg border border-[#1E293B] bg-[#090D14] px-3.5 font-mono text-xs text-[#E6EDF3] focus:border-emerald-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-[#CBD5E1]">
+                شناسه دیتابیس کلودفلر (Cloudflare D1 Database ID)
+              </label>
+              <input
+                type="text"
+                dir="ltr"
+                value={d1DatabaseId}
+                onChange={(e) => setD1DatabaseId(e.target.value)}
                 className="mt-1.5 h-10 w-full rounded-lg border border-[#1E293B] bg-[#090D14] px-3.5 font-mono text-xs text-[#E6EDF3] focus:border-emerald-500 focus:outline-none"
               />
             </div>

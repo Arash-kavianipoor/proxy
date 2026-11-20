@@ -17,7 +17,11 @@ import {
   rotateSubscriptionSecret,
   updateProxyToken,
 } from '../lib/api.ts';
-import { buildProxyUri } from '../lib/proxyGenerators.ts';
+import {
+  buildIncySingBoxConfig,
+  buildProxyUri,
+  buildRawUriList,
+} from '../lib/proxyGenerators.ts';
 import type {
   DashboardState,
   ProxyProtocol,
@@ -164,6 +168,17 @@ export function TokensPanel({ dashboard, onUpdate }: TokensPanelProps) {
     }
   };
 
+  const handleDownloadIncyJson = () => {
+    const content = buildIncySingBoxConfig(dashboard.tokens, dashboard.settings);
+    const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `incy-${dashboard.settings.domain}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Subscription Links Bar */}
@@ -171,21 +186,47 @@ export function TokensPanel({ dashboard, onUpdate }: TokensPanelProps) {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold text-[#E6EDF3]">
-              لینک اشتراک هوشمند (Subscription) برای V2Ray و INCY
+              لینک اشتراک هوشمند و اتصال مستقیم برای INCY و V2Ray
             </h2>
             <p className="mt-1 text-xs text-[#94A3B8]">
-              با افزودن این لینک در برنامه v2rayNG، v2rayN یا INCY، تمام توکن‌های فعال به‌صورت خودکار همگام‌سازی می‌شوند.
+              برای رفع قطعی و خطای <span dir="ltr" className="font-mono text-[#CBD5E1]">No such host is known</span> در برنامه INCY هنگام اتصال از ایران، توکن‌ها را مستقیماً کپی و در بخش Add Content جای‌گذاری کنید (بدون نیاز به DNS).
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleRotateSub}
-            disabled={busyId === 'sub-rotate'}
-            className="flex h-9 items-center gap-2 rounded-lg border border-[#1E293B] bg-[#090D14] px-3.5 text-xs font-medium text-[#CBD5E1] transition-colors hover:border-amber-500/40 hover:text-amber-300 disabled:opacity-50 whitespace-nowrap shrink-0"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${busyId === 'sub-rotate' ? 'animate-spin' : ''}`} />
-            <span>بازتولید توکن اشتراک</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => copyText('direct-raw-incy', buildRawUriList(dashboard.tokens))}
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-500 whitespace-nowrap shrink-0"
+            >
+              {copiedId === 'direct-raw-incy' ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+              <span>
+                {copiedId === 'direct-raw-incy'
+                  ? 'کپی شد! در INCY پیست کنید'
+                  : 'کپی مستقیم توکن‌ها برای INCY (آفلاین)'}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadIncyJson}
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#1E293B] bg-[#090D14] px-3.5 text-xs font-medium text-[#CBD5E1] transition-colors hover:bg-[#1A2233] whitespace-nowrap shrink-0"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>دانلود JSON آفلاین INCY</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleRotateSub}
+              disabled={busyId === 'sub-rotate'}
+              className="flex h-9 items-center gap-2 rounded-lg border border-[#1E293B] bg-[#090D14] px-3.5 text-xs font-medium text-[#CBD5E1] transition-colors hover:border-amber-500/40 hover:text-amber-300 disabled:opacity-50 whitespace-nowrap shrink-0"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${busyId === 'sub-rotate' ? 'animate-spin' : ''}`} />
+              <span>بازتولید توکن اشتراک</span>
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">

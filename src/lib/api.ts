@@ -1,5 +1,6 @@
 import { staticVault } from './staticVault.ts';
 import type {
+  D1StatusResult,
   DashboardState,
   IpAuditResult,
   ProbeResult,
@@ -314,6 +315,33 @@ export async function runIpAudit(): Promise<IpAuditResult> {
   } catch (err) {
     if (err instanceof StaticHostFallbackError) {
       return staticVault.runIpAudit();
+    }
+    throw err;
+  }
+}
+
+export async function fetchD1Status(): Promise<D1StatusResult> {
+  try {
+    return await apiRequest('/api/d1/status');
+  } catch (err) {
+    if (err instanceof StaticHostFallbackError) {
+      return staticVault.getD1Status();
+    }
+    throw err;
+  }
+}
+
+export async function syncD1Database(): Promise<{
+  ok: boolean;
+  databaseId: string;
+  syncedTokens: number;
+  dashboard: DashboardState;
+}> {
+  try {
+    return await apiRequest('/api/d1/sync', { method: 'POST' });
+  } catch (err) {
+    if (err instanceof StaticHostFallbackError) {
+      throw new Error('همگام‌سازی مستقیم REST API نیازمند سرور Node و متغیرهای CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN است؛ در Cloudflare Pages از فایل schema.sql و wrangler.toml استفاده کنید.');
     }
     throw err;
   }

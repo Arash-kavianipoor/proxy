@@ -5,12 +5,15 @@ import tls from 'node:tls';
 import express from 'express';
 import {
   buildCloudflareWorkerScript,
+  buildD1SchemaSql,
   buildIncySingBoxConfig,
   buildV2RaySubscriptionPayload,
+  buildWranglerToml,
   buildXrayFragmentConfig,
 } from './src/lib/proxyGenerators.ts';
 import type {
   CleanIpEntry,
+  D1StatusResult,
   DashboardState,
   IpAuditResult,
   ProbeResult,
@@ -19,6 +22,9 @@ import type {
   SecurityLogEntry,
   SystemSettings,
 } from './src/types.ts';
+
+const DEFAULT_D1_DATABASE_ID =
+  process.env.CLOUDFLARE_D1_DATABASE_ID || 'a16983d7-1da3-4555-a1aa-f5730bccfcae';
 
 const PORT = 3000;
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -77,6 +83,7 @@ function createInitialStore(): PersistentStore {
       proxyIp: '104.16.132.229',
       dohProvider: 'https://1.1.1.1/dns-query',
       subscriptionSecret: subSecret,
+      d1DatabaseId: DEFAULT_D1_DATABASE_ID,
       antiProbeDecoy: true,
       webrtcBlock: true,
       strictIpMask: true,
@@ -195,7 +202,11 @@ function loadStore(): PersistentStore {
   }
   try {
     const raw = fs.readFileSync(STORE_PATH, 'utf8');
-    return JSON.parse(raw) as PersistentStore;
+    const parsed = JSON.parse(raw) as PersistentStore;
+    if (!parsed.settings.d1DatabaseId) {
+      parsed.settings.d1DatabaseId = DEFAULT_D1_DATABASE_ID;
+    }
+    return parsed;
   } catch {
     const fallback = createInitialStore();
     fs.writeFileSync(STORE_PATH, JSON.stringify(fallback, null, 2), 'utf8');
@@ -208,6 +219,61 @@ let store: PersistentStore = loadStore();
 function saveStore(): void {
   ensureDataDir();
   fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
+  try {
+    const publicDir = path.resolve(process.cwd(), 'public');
+    if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(publicDir, '_worker.js'),
+      buildCloudflareWorkerScript(store.tokens, store.settings),
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.resolve(process.cwd(), 'wrangler.toml'),
+      buildWranglerToml(store.settings),
+      'utf8'
+    );
+  } catch {
+    // Non-fatal if filesystem is read-only
+  }
+}
+
+async function queryCloudflareD1(
+  databaseId: string,
+  sql: string
+): Promise<{ success: boolean; results?: Array<Record<string, unknown>>; error?: string }> {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim();
+  if (!accountId || !apiToken) {
+    return { success: false, error: 'CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN not set' };
+  }
+
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/d1/database/${encodeURIComponent(databaseId)}/query`;
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ sql }),
+  });
+
+  const data = (await resp.json().catch(() => ({}))) as {
+    success?: boolean;
+    errors?: Array<{ message?: string }>;
+    result?: Array<{ results?: Array<Record<string, unknown>> }>;
+  };
+
+  if (!resp.ok || !data.success) {
+    return {
+      success: false,
+      error: data.errors?.[0]?.message || `Cloudflare D1 HTTP ${resp.status}`,
+    };
+  }
+
+  return {
+    success: true,
+    results: data.result?.[0]?.results || [],
+  };
 }
 
 function appendSecurityLog(
@@ -755,6 +821,10 @@ async function startServer(): Promise<void> {
         typeof b.decoyTitle === 'string' && b.decoyTitle.trim()
           ? b.decoyTitle.trim().slice(0, 80)
           : store.settings.decoyTitle,
+      d1DatabaseId:
+        typeof b.d1DatabaseId === 'string' && b.d1DatabaseId.trim()
+          ? b.d1DatabaseId.trim()
+          : store.settings.d1DatabaseId,
     };
 
     // Sync SNI and Host across tokens when domain changes
@@ -804,6 +874,89 @@ async function startServer(): Promise<void> {
     res.json({
       filename: `incy-${store.settings.domain}.json`,
       content: buildIncySingBoxConfig(store.tokens, store.settings),
+    });
+  });
+
+  app.get('/api/d1/status', requireAuth, async (_req, res) => {
+    const dbId = store.settings.d1DatabaseId || DEFAULT_D1_DATABASE_ID;
+    const hasEnvCreds = Boolean(
+      process.env.CLOUDFLARE_ACCOUNT_ID?.trim() && process.env.CLOUDFLARE_API_TOKEN?.trim()
+    );
+
+    if (!hasEnvCreds) {
+      const payload: D1StatusResult = {
+        databaseId: dbId,
+        bindingName: 'DB',
+        restApiConfigured: false,
+        connected: false,
+        tablesReady: false,
+        tokenCountInD1: null,
+        checkedAt: new Date().toISOString(),
+        message:
+          'شناسه D1 در wrangler.toml و _worker.js متصل است. برای همگام‌سازی مستقیم از طریق REST API، متغیرهای CLOUDFLARE_ACCOUNT_ID و CLOUDFLARE_API_TOKEN را در محیط سرور تنظیم کنید.',
+      };
+      res.json(payload);
+      return;
+    }
+
+    const q = await queryCloudflareD1(dbId, 'SELECT COUNT(*) AS cnt FROM proxy_tokens');
+    if (!q.success) {
+      const isNoTable = (q.error || '').toLowerCase().includes('no such table');
+      const payload: D1StatusResult = {
+        databaseId: dbId,
+        bindingName: 'DB',
+        restApiConfigured: true,
+        connected: isNoTable,
+        tablesReady: false,
+        tokenCountInD1: null,
+        checkedAt: new Date().toISOString(),
+        message: isNoTable
+          ? 'اتصال به کلودفلر D1 برقرار است؛ جداول هنوز ساخته نشده‌اند. روی «همگام‌سازی و ساخت جداول D1» کلیک کنید.'
+          : `خطا در اتصال به D1: ${q.error}`,
+      };
+      res.json(payload);
+      return;
+    }
+
+    const countVal = Number(q.results?.[0]?.cnt ?? 0);
+    const payload: D1StatusResult = {
+      databaseId: dbId,
+      bindingName: 'DB',
+      restApiConfigured: true,
+      connected: true,
+      tablesReady: true,
+      tokenCountInD1: countVal,
+      checkedAt: new Date().toISOString(),
+      message: `متصل به دیتابیس کلودفلر D1 (${countVal} توکن همگام‌سازی‌شده).`,
+    };
+    res.json(payload);
+  });
+
+  app.post('/api/d1/sync', requireAuth, async (req, res) => {
+    const clientIp = maskIpForLog(getClientIp(req));
+    const dbId = store.settings.d1DatabaseId || DEFAULT_D1_DATABASE_ID;
+    const sql = buildD1SchemaSql(store.tokens, store.settings);
+    const result = await queryCloudflareD1(dbId, sql);
+
+    if (!result.success) {
+      res.status(400).json({
+        error: result.error || 'خطا در همگام‌سازی با کلودفلر D1',
+      });
+      return;
+    }
+
+    appendSecurityLog(
+      'settings_updated',
+      'info',
+      clientIp,
+      `همگام‌سازی کامل توکن‌ها و تنظیمات با دیتابیس کلودفلر D1 (${dbId}) انجام شد.`
+    );
+
+    res.json({
+      ok: true,
+      databaseId: dbId,
+      syncedTokens: store.tokens.length,
+      dashboard: getDashboardPayload(),
     });
   });
 

@@ -56,11 +56,23 @@ export interface SystemSettings {
   proxyIp: string;
   dohProvider: string;
   subscriptionSecret: string;
+  d1DatabaseId: string;
   antiProbeDecoy: boolean;
   webrtcBlock: boolean;
   strictIpMask: boolean;
   stripClientHeaders: boolean;
   decoyTitle: string;
+}
+
+export interface D1StatusResult {
+  databaseId: string;
+  bindingName: string;
+  restApiConfigured: boolean;
+  connected: boolean;
+  tablesReady: boolean;
+  tokenCountInD1: number | null;
+  checkedAt: string;
+  message: string;
 }
 
 export interface DashboardState {
