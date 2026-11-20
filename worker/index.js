@@ -42,7 +42,15 @@ export default {
         );
       }
 
-      // 3. Non-WebSocket requests: pass through to Cloudflare Pages ASSETS or decoy
+      // 3. Return 405 JSON on /api/* so Edge Vault activates cleanly on Worker hosting
+      if (url.pathname.startsWith('/api/')) {
+        return new Response(JSON.stringify({ error: 'Edge vault mode' }), {
+          status: 405,
+          headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+        });
+      }
+
+      // 4. Non-WebSocket requests: pass through to Cloudflare Workers ASSETS or decoy
       if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
         if (env && env.ASSETS) {
           return env.ASSETS.fetch(request);

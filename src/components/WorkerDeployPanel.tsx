@@ -57,7 +57,7 @@ export function WorkerDeployPanel({ dashboard, onUpdate }: WorkerDeployPanelProp
 
   const activeFilename =
     activeCodeTab === 'worker'
-      ? '_worker.js'
+      ? 'worker/index.js'
       : activeCodeTab === 'wrangler'
         ? 'wrangler.toml'
         : 'schema.sql';

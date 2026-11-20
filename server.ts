@@ -220,10 +220,10 @@ function saveStore(): void {
   ensureDataDir();
   fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
   try {
-    const publicDir = path.resolve(process.cwd(), 'public');
-    if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+    const workerDir = path.resolve(process.cwd(), 'worker');
+    if (!fs.existsSync(workerDir)) fs.mkdirSync(workerDir, { recursive: true });
     fs.writeFileSync(
-      path.join(publicDir, '_worker.js'),
+      path.join(workerDir, 'index.js'),
       buildCloudflareWorkerScript(store.tokens, store.settings),
       'utf8'
     );

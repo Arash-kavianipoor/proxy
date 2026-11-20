@@ -440,8 +440,14 @@ export function buildXrayFragmentConfig(token: ProxyToken, settings: SystemSetti
 export function buildWranglerToml(settings: SystemSettings): string {
   const dbId = settings.d1DatabaseId || 'a16983d7-1da3-4555-a1aa-f5730bccfcae';
   return `name = "arash-proxy-system"
+main = "worker/index.js"
 compatibility_date = "2025-01-01"
-pages_build_output_dir = "dist"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
 
 [vars]
 PROXYIP = "${settings.proxyIp || '104.16.132.229'}"
@@ -551,7 +557,15 @@ export default {
         );
       }
 
-      // 3. Non-WebSocket requests: pass through to Cloudflare Pages ASSETS or decoy
+      // 3. Return 405 JSON on /api/* so Edge Vault activates cleanly on Worker hosting
+      if (url.pathname.startsWith('/api/')) {
+        return new Response(JSON.stringify({ error: 'Edge vault mode' }), {
+          status: 405,
+          headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+        });
+      }
+
+      // 4. Non-WebSocket requests: pass through to Cloudflare Workers ASSETS or decoy
       if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
         if (env && env.ASSETS) {
           return env.ASSETS.fetch(request);
